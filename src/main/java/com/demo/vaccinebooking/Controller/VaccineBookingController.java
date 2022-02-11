@@ -17,7 +17,7 @@ public class VaccineBookingController {
 
     @GetMapping("/availableSlots")
     public ResponseEntity<APIResponse> getAvailableSlots(@RequestParam String vaccineName, @RequestParam String date){
-        return vaccineBookingService.getAvailableSlots(vaccineName,LocalDate.parse(date));
+        return vaccineBookingService.getAvailableSlots(vaccineName,date);
     }
 
     @PostMapping("/booking")

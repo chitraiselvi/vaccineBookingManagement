@@ -3,19 +3,25 @@ package com.demo.vaccinebooking.Model;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import javax.persistence.*;
-
+import javax.validation.constraints.Email;
+import javax.validation.constraints.NotBlank;
 @Entity
 @JsonIgnoreProperties(value = {"hibernateLazyInitializer","handler"})
 public class Booking {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private int bookingId;
+    @NotBlank(message = "Email Id cannot be blank")
+    @Email(message = "Your email id is invalid ")
     private String emailId;
+    @NotBlank(message = "First name cannot be blank")
     private String firstName;
+    @NotBlank(message = "Last Name cannot be blank")
     private String lastName;
+    @NotBlank(message = "Vaccine name cannot be blank")
     private String vaccineName;
     private String mobileNo;
-    @OneToOne(cascade = { CascadeType.DETACH }, fetch = FetchType.EAGER)
+    @OneToOne(cascade = { CascadeType.DETACH })
     @JoinColumn(name="slotId")
     private Slot slot;
 

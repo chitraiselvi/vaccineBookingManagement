@@ -1,11 +1,10 @@
 package com.demo.vaccinebooking.Model;
 
 import java.util.List;
-
 public class APIResponse {
-    Boolean success;
-    String message;
-    List<Object> data;
+    private Boolean success;
+   private String message;
+   private List<Object> data;
 
     public Boolean getSuccess() {
         return success;
@@ -29,5 +28,6 @@ public class APIResponse {
 
     public void setData(List<Object> data) {
         this.data = data;
+
     }
 }

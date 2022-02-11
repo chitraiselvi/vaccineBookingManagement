@@ -7,6 +7,7 @@ import com.demo.vaccinebooking.Model.Vaccine;
 import com.demo.vaccinebooking.Repository.BookingRepository;
 import com.demo.vaccinebooking.Repository.SlotRepository;
 import com.demo.vaccinebooking.Repository.VaccineRepository;
+import org.hibernate.validator.internal.engine.ConstraintViolationImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -14,7 +15,9 @@ import org.springframework.stereotype.Service;
 import org.hibernate.annotations.common.util.impl.LoggerFactory;
 import org.jboss.logging.Logger;
 
-import javax.transaction.Transactional;
+
+import javax.validation.ConstraintViolation;
+import javax.validation.ConstraintViolationException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -32,38 +35,48 @@ public class VaccineBookingService {
     SlotService slotService;
 
     //to get available slots for the given vaccine and date
-    public ResponseEntity<APIResponse> getAvailableSlots(String vaccineName, LocalDate date){
+    public ResponseEntity<APIResponse> getAvailableSlots(String vaccineName, String date){
         logger.info("get all available slots for a vaccine and date");
         APIResponse apiResponse = new APIResponse();
-        //get vaccine by name
-        Vaccine vaccine = vaccineService.getVaccineByName(vaccineName);
-
-        if(vaccine == null){
-            apiResponse.setSuccess(false);
-            apiResponse.setMessage("The vaccine you have given is unavailable. Please select a different vaccine");
-        }
-        else if(vaccine.getAvailableShots()>0){
-            //get available slots
-            List<Slot> slots = slotService.getSlotsByDate(date);
-            if(slots == null || slots.size() < 1){
+        try {
+            LocalDate selectedDate = LocalDate.parse(date);
+            //get vaccine by name
+            Vaccine vaccine = vaccineService.getVaccineByName(vaccineName);
+            if (vaccine == null || vaccine.getAvailableShots() < 1) {
                 apiResponse.setSuccess(false);
-                apiResponse.setMessage("There are no slots available. Please try some other date.");
-            }
-            else{
-                apiResponse.setSuccess(true);
-                apiResponse.setMessage("Here are the available slots for you.");
-                List<Object> objectList = new ArrayList<>();
-                for(Slot slot:slots){
-                    objectList.add(slot);
+                apiResponse.setMessage("The vaccine you have given is unavailable. Please select a different vaccine");
+                return new ResponseEntity<APIResponse>(apiResponse, HttpStatus.NOT_FOUND);
+            } else {
+                //get available slots
+                List<Slot> slots = slotService.getSlotsByDate(selectedDate);
+                if (slots == null || slots.size() < 1) {
+                    apiResponse.setSuccess(false);
+                    apiResponse.setMessage("There are no slots available. Please try some other date.");
+                    return new ResponseEntity<APIResponse>(apiResponse, HttpStatus.NOT_FOUND);
+                } else {
+                    apiResponse.setSuccess(true);
+                    apiResponse.setMessage("Here are the available slots for you.");
+                    List<Object> objectList = new ArrayList<>();
+                    for (Slot slot : slots) {
+                        if (slot.isAvailable()) {
+                            objectList.add(slot);
+                        }
+                    }
+                    //slots.stream().forEach(slot -> objectList.add(slot));
+                    apiResponse.setData(objectList);
+                    return new ResponseEntity<APIResponse>(apiResponse, HttpStatus.OK);
                 }
-                //slots.stream().forEach(slot -> objectList.add(slot));
-                apiResponse.setData(objectList);
             }
-        }else{
-            apiResponse.setSuccess(false);
-            apiResponse.setMessage("Vaccine unavailable.");
         }
-        return new ResponseEntity<APIResponse>(apiResponse, HttpStatus.OK);
+        catch (Exception e){
+            logger.info(e);
+            apiResponse.setSuccess(false);
+            apiResponse.setMessage("There is a technical error while retrieving the slots.");
+            List<Object> objectList = new ArrayList<>();
+            objectList.add(e.getMessage());
+            apiResponse.setData(objectList);
+            return new ResponseEntity<APIResponse>(apiResponse,HttpStatus.NOT_FOUND);
+        }
     }
 
     //to create booking
@@ -71,7 +84,6 @@ public class VaccineBookingService {
     {
         logger.info("create a booking");
         APIResponse apiResponse = new APIResponse();
-        Boolean isSuccess = false;
         int assingedSlotId = booking.getSlot().getSlotId();
         try {
             Slot assignedSlot = slotService.getSlotsById(assingedSlotId);
@@ -80,39 +92,45 @@ public class VaccineBookingService {
                 apiResponse.setMessage("The slot you have selected is unavailable. Please choose a different time slot.");
                 return new ResponseEntity<APIResponse>(apiResponse,HttpStatus.FORBIDDEN);
             }
-            else{
-                isSuccess = true;
+
+            Vaccine vaccine = vaccineService.getVaccineByName(booking.getVaccineName());
+            if(vaccine == null || vaccine.getAvailableShots() < 1){
+                apiResponse.setSuccess(false);
+                apiResponse.setMessage("The vaccine you have selected is unavailable. Please choose a different vaccine.");
+                return new ResponseEntity<APIResponse>(apiResponse,HttpStatus.FORBIDDEN);
             }
-        }
-        catch (Exception e){
-            logger.info(e);
-            apiResponse.setSuccess(false);
-            apiResponse.setMessage("The slot you have selected is unavailable. Please choose a different time slot.");
-            return new ResponseEntity<APIResponse>(apiResponse,HttpStatus.FORBIDDEN);
-        }
 
-        Vaccine vaccine = vaccineService.getVaccineByName(booking.getVaccineName());
-        if(vaccine == null || vaccine.getAvailableShots() < 1){
-            apiResponse.setSuccess(false);
-            apiResponse.setMessage("The vaccine you have selected is unavailable. Please choose a different vaccine.");
-            return new ResponseEntity<APIResponse>(apiResponse,HttpStatus.FORBIDDEN);
-        }
-        else {
-            isSuccess = true;
-        }
-
-        if(isSuccess){
+            //create booking
+            Booking createdBooking = bookingRepository.save(booking);
             //assign slot to the booking
             slotService.assignSlotToBooking(assingedSlotId);
             //decrease available shots count
             vaccineService.decreaseVaccineShots(booking.getVaccineName());
-            //create booking
-            Booking createdBooking = bookingRepository.save(booking);
             apiResponse.setSuccess(true);
             apiResponse.setMessage("Your appointment has been booked successfully. Here is your booking id : "+createdBooking.getBookingId());
             return  new ResponseEntity<APIResponse>(apiResponse,HttpStatus.OK);
         }
-        return new ResponseEntity<APIResponse>(apiResponse,HttpStatus.FORBIDDEN);
+        catch (ConstraintViolationException e){
+            logger.info(e.getConstraintViolations());
+            apiResponse.setSuccess(false);
+            apiResponse.setMessage("There are some errors during the booking creation.");
+            List<Object> objectList = new ArrayList<>();
+            for(ConstraintViolation<?> ex : e.getConstraintViolations()){
+                logger.info(ex);
+                objectList.add(ex.getMessage());
+            }
+            apiResponse.setData(objectList);
+            return new ResponseEntity<APIResponse>(apiResponse,HttpStatus.FORBIDDEN);
+        }
+        catch (Exception e){
+            logger.info(e);
+            apiResponse.setSuccess(false);
+            apiResponse.setMessage("You booking cannot be created. Please see the error details below.");
+            List<Object> objectList = new ArrayList<>();
+            objectList.add(e.getMessage());
+            apiResponse.setData(objectList);
+            return new ResponseEntity<APIResponse>(apiResponse,HttpStatus.FORBIDDEN);
+        }
     }
 
     public Booking getBooking(int bookingId){
@@ -143,6 +161,9 @@ public class VaccineBookingService {
             logger.info(e);
             apiResponse.setSuccess(false);
             apiResponse.setMessage("No booking details available for this booking id.");
+            List<Object> objectList = new ArrayList<>();
+            objectList.add(e.getMessage());
+            apiResponse.setData(objectList);
             return new ResponseEntity<APIResponse>(apiResponse, HttpStatus.NOT_FOUND);
         }
     }
@@ -159,7 +180,7 @@ public class VaccineBookingService {
             //check if vaccine is changed
             String vaccineName = booking.getVaccineName();
             String oldVaccineName = oldBooking.getVaccineName();
-            if(!vaccineName.equalsIgnoreCase(oldVaccineName)){
+            if(!vaccineName.equals(oldVaccineName)){
                 apiResponse.setSuccess(false);
                 apiResponse.setMessage("Vaccine cannot be updated. Please cancel your booking and create a new one.");
                 return new ResponseEntity<APIResponse>(apiResponse, HttpStatus.FORBIDDEN);
@@ -188,12 +209,24 @@ public class VaccineBookingService {
             bookingRepository.save(booking);
             return new ResponseEntity<APIResponse>(apiResponse, HttpStatus.OK);
         }
+        catch (ConstraintViolationException e){
+            logger.info(e.getConstraintViolations());
+            apiResponse.setSuccess(false);
+            apiResponse.setMessage("There are some errors during the booking creation.");
+            List<Object> objectList = new ArrayList<>();
+            for(ConstraintViolation<?> ex : e.getConstraintViolations()){
+                logger.info(ex);
+                objectList.add(ex.getMessage());
+            }
+            apiResponse.setData(objectList);
+            return new ResponseEntity<APIResponse>(apiResponse,HttpStatus.FORBIDDEN);
+        }
         catch (Exception e){
             logger.info(e);
             apiResponse.setSuccess(false);
             apiResponse.setMessage("Your booking cannot be updated.");
             List<Object> objectList = new ArrayList<>();
-            objectList.add(e);
+            objectList.add(e.getMessage());
             apiResponse.setData(objectList);
             return new ResponseEntity<APIResponse>(apiResponse, HttpStatus.FORBIDDEN);
         }
@@ -221,6 +254,9 @@ public class VaccineBookingService {
             logger.info(e);
             apiResponse.setSuccess(false);
             apiResponse.setMessage("There is a technical error while cancelling your booking.");
+            List<Object> objectList = new ArrayList<>();
+            objectList.add(e.getMessage());
+            apiResponse.setData(objectList);
             return new ResponseEntity<APIResponse>(apiResponse, HttpStatus.FORBIDDEN);
         }
     }
@@ -238,6 +274,9 @@ public class VaccineBookingService {
         catch (Exception e){
             apiResponse.setSuccess(false);
             apiResponse.setMessage("There is a technical error while cancelling your booking.");
+            List<Object> objectList = new ArrayList<>();
+            objectList.add(e.getMessage());
+            apiResponse.setData(objectList);
             return new ResponseEntity<APIResponse>(apiResponse, HttpStatus.FORBIDDEN);
         }
     }

@@ -22,7 +22,7 @@ public class SlotService {
    public List<Slot> addSlots(List<Slot> slots)
    {
        logger.info("new slots added");
-       logger.info(slots.get(1).isAvailable());
+
        return slotRepository.saveAll(slots);
    }
 
