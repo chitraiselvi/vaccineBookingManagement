@@ -1,16 +1,19 @@
 package com.demo.vaccinebooking.Service;
 
+import com.demo.vaccinebooking.Model.APIResponse;
 import com.demo.vaccinebooking.Model.Slot;
 import com.demo.vaccinebooking.Repository.SlotRepository;
 import org.hibernate.annotations.common.util.impl.LoggerFactory;
 import org.jboss.logging.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 public class SlotService {
@@ -19,11 +22,15 @@ public class SlotService {
     @Autowired
     SlotRepository slotRepository;
 
-   public List<Slot> addSlots(List<Slot> slots)
+   public ResponseEntity<APIResponse> addSlots(List<Slot> slots)
    {
        logger.info("new slots added");
-
-       return slotRepository.saveAll(slots);
+       APIResponse apiResponse = new APIResponse();
+       apiResponse.setSuccess(true);
+       List<Object> objectList = new ArrayList<>();
+       slotRepository.saveAll(slots).stream().forEach(slot -> objectList.add(slot));
+       apiResponse.setData(objectList);
+       return new ResponseEntity<>(apiResponse, HttpStatus.OK);
    }
 
     public Slot saveSlot(Slot slot){
@@ -36,17 +43,17 @@ public class SlotService {
     }
 
     //to get slots by id
-    public Slot getSlotsById(int id)
+    public Optional<Slot> getSlotsById(int id)
     {
-        return slotRepository.getById(id);
+        return slotRepository.findById(id);
     }
 
     //assign slot to the booking
     public void assignSlotToBooking(int slotId){
         //assign slot to the booking
         logger.info("assign slot to the booking");
-        Slot bookedSlot = getSlotsById(slotId);
-        bookedSlot.setIsAvailable(false);
+        Slot bookedSlot = getSlotsById(slotId).get();
+        bookedSlot.setAvailable(false);
         saveSlot(bookedSlot);
     }
 
@@ -54,8 +61,8 @@ public class SlotService {
     public void unassignSlotFromBooking(int slotId){
         //unassign slot from the booking
         logger.info("unassign slot from the booking");
-        Slot bookedSlot = getSlotsById(slotId);
-        bookedSlot.setIsAvailable(true);
+        Slot bookedSlot = getSlotsById(slotId).get();
+        bookedSlot.setAvailable(true);
         saveSlot(bookedSlot);
     }
 }
